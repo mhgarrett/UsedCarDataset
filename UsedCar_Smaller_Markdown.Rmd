@@ -1,0 +1,179 @@
+---
+title: "UsedCar"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+(1) Load the dataframe into R:
+
+```{r}
+Cars.Data.Smaller<-read.csv("What path you have your csv.file stored")
+str(Cars.Data.Smaller)
+```
+
+(2)Create a new dataframe called "cars.price" for the question: 
+```{r}
+cars.price<-Cars.Data.Smaller[, c("mileage", "year", "price", "horsepower", "daysonmarket")]
+str(cars.price)
+```
+
+(3)Check each of the attributes for NAs.
+
+```{r}
+any(is.na(cars.price$mileage))# Yes NA values to mileage 
+length(cars.price$mileage[is.na(cars.price$mileage)]) #number of NAs in owner_count is 282.
+any(is.na(cars.price$horsepower)) #Yes NA values to horsepower.
+length(cars.price$horsepower[is.na(cars.price$horsepower)]) #number of NAs in horsepower is 209.
+any(is.na(cars.price$daysonmarket))#No NA values to daysonmarket
+any(is.na(cars.price$year))# No NA values in year.
+any(is.na(cars.price$price))# No NA values in price. 
+```
+
+(4) Handle NA values in the dataset
+```{r}
+library(imputeTS)
+```
+
+Handle NAs in mileage. Since the missing value is only approximately 200 cases, I chose to just go ahead and replace the NA with mean value. 
+```{r}
+cars.price$mileage<-na_interpolation(cars.price$mileage)
+summary(cars.price$mileage)
+```
+Remove NAs in horsepower
+```{r}
+cars.price$horsepower<-na_interpolation(cars.price$horsepower)
+summary(cars.price$horsepower)
+```
+
+```{r}
+str(cars.price)
+```
+
+Here are my business questions:  How does the number of previous owners, mileage, year, cylinders, and car makes predict the price of the used cars?
+
+4. Visualize the data first. 
+```{r}
+library(ggplot2)
+```
+Creating best fit lines with the ggplot for four variables. 
+```{r}
+#color choices for R base plot using brewer.pal(n, name)
+library(RColorBrewer)
+brewer.pal(n=9, name="RdBu")
+#4 colors for each color palette 
+```
+```{r}
+library(ggpubr) #library for ggarrange()
+```
+
+```{r}
+#visualization of the car inventory by car price 
+ggplot(cars.price, aes(x=price))+geom_histogram(color="black", fill="#a1e9f0")+
+  ggtitle("Distribution of Car Price in Inventory")
+```
+
+
+```{r}
+plot.horsepower<-ggplot(cars.price, aes(x=horsepower, y=price))+geom_point()+stat_smooth(method="lm", col="#D6604D")+ggtitle("Price~Horsepower")
+plot.year<-ggplot(cars.price, aes(x=year, y=price))+geom_point()+stat_smooth(method="lm", col="#F4A582")+ggtitle("Price~Year")
+plot.mileage<-ggplot(cars.price, aes(x=mileage, y=price))+geom_point()+stat_smooth(method="lm", col="#92C5DE")+ggtitle("Price~Mileage") #figure out why the abline is below zero 
+plot.daysonmarket<-ggplot(cars.price, aes(x=daysonmarket, y=price))+geom_point()+stat_smooth(method="lm", col="#2166AC")+ggtitle("Price~Daysonmarket")
+plots <- ggarrange(plot.horsepower,plot.year,plot.mileage, plot.daysonmarket,
+                    ncol = 2, nrow = 2) #combine ggplots
+plots
+# http://www.sthda.com/english/articles/32-r-graphics-essentials/126-combine-multiple-ggplots-in-one-graph/
+```
+
+
+5. Linear models for the variables, # preownership, mileage, year, horsepower, daysonmarket.
+
+```{r}
+mileagePred<-lm(price~mileage, data=cars.price)
+summary(mileagePred)
+```
+
+
+```{r}
+yearPred<-lm(price~year, data=cars.price)
+summary(yearPred)
+```
+
+```{r}
+horsepowerPred<-lm(price~horsepower, data=cars.price)
+summary(horsepowerPred)
+```
+
+```{r}
+daysPred<-lm(price~daysonmarket, data=cars.price)
+summary(daysPred)
+```
+
+https://rpubs.com/justingee193/rprof_lm 
+
+Load the needed libraries
+```{r}
+library(caret)
+```
+
+```{r}
+#new dataset without daysonmarket since it does not have a great impact on the car price
+cars<-cars.price[, -5]
+str(cars)
+```
+
+
+```{r}
+#Split the data into train v.s. test data
+set.seed(111)
+train_list<-createDataPartition(y=cars$price, p=0.66, list=FALSE)
+train<-cars[train_list,]
+test<-cars[-train_list,]
+dim(train)
+dim(test)
+```
+
+```{r}
+#building the model with train dataset. 
+model2<-train(price~., data=train,
+                 method = "lm", 
+                 preProcess=c("scale", "center"),
+                 trControl=trainControl(method="none")) 
+summary(model2)
+#Apply model for prediction
+model.train<-predict(model2, train)
+model.test<-predict(model2, test) #apply model to make prediction on test dataset 
+#Model performance by visualization 
+plot(train$price, model.train, col = "blue", xlab="price", ylab="predicted",sub = "Model performance for train v.s. test")
+points(test$price, model.test, col = "red") #overlay test set over train set. 
+```
+
+```{r}
+#Coefficient for train v.s. test: 
+r.train<-cor(train$price, model.train)
+r.test<-cor(test$price, model.test)
+r2.train<-r.train^2
+r2.test<-r.test^2
+r2.train
+r2.test
+#The code used in here is inspired by: https://www.youtube.com/watch?v=el8xP38SWdk&ab_channel=DataProfessor 
+```
+```{r}
+library(tidyverse)
+```
+
+```{r}
+#Predict with a given car:
+year<-c(2008, 2013, 2017, 2020)
+horsepower<-c(186, 254, 310, 285)
+mileage<-c(91733, 81807, 42942, 14252)
+test<-data.frame(year, horsepower, mileage)
+pricepred<- predict(model2,newdata=test)
+pricepred
+test.price<-data.frame(horsepower, mileage, year,pricepred)
+view(test.price)
+```
+
+
+
+
